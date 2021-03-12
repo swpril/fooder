@@ -1,152 +1,148 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const dotenv = require('dotenv').config();
 const jwt = require('jsonwebtoken');
+
+const dotenv = require('dotenv').config();
+
 const Order = require('./orders');
 
 const vendorSchema = new mongoose.Schema({
+  vendorName: {
+    type: String,
+    trim: true,
+    required: true
+  },
 
-    vendorName: {
-        type: String,
-        trim: true,
-        required: true
-    },
+  email: {
+    type: String,
+    unique: true,
+    trim: true,
+    required: true,
+    lowercase: true
+  },
 
-    email: {
-        type: String,
-        unique: true,
-        trim: true,
-        required: true,
-        lowercase: true
-    },
+  password: {
+    type: String,
+    required: true,
+    trim: true
+  },
 
-    password: {
+  contactNumber: {
+    type: Number,
+    required: true,
+    unique: true
+  },
+
+  vendorAddress: {
+    type: String,
+    required: true
+  },
+
+  eta: {
+    type: Number,
+    required: true
+  },
+
+  dishes: [
+    {
+      dishName: {
         type: String,
-        required: true,
         trim: true
-    },
+      },
 
-    contactNumber: {
-        type: Number,
-        required: true,
-        unique: true
-    },
+      dishType: {
+        type: String,
+        trim: true
+      },
 
-    vendorAddress: {
+      dishCategory: {
+        type: String,
+        trim: true
+      },
+
+      cuisineType: {
+        type: String,
+        trim: true
+      },
+
+      price: {
+        type: Number
+      },
+
+      dishImage: {
+        type: String
+      }
+    }
+  ],
+
+  tokens: [
+    {
+      token: {
         type: String,
         required: true
-    },
-
-    eta: {
-        type: Number,
-        required: true
-    },
-
-    dishes: [{
-
-        dishName: {
-            type: String,
-            trim: true
-        },
-
-        dishType: {
-            type: String,
-            trim: true
-        },
-
-        dishCategory: {
-            type: String,
-            trim: true
-        },
-
-        cuisineType: {
-            type: String,
-            trim: true
-        },
-
-        price: {
-            type: Number
-        },
-
-        dishImage: {
-            type: String,
-        },
-
-
-    }],
-
-    tokens: [
-        {
-            token: {
-                type: String,
-                required: true,
-            }
-        }
-    ],
-
-    outletPicture: {
-        type: Buffer
+      }
     }
+  ],
 
+  outletPicture: {
+    type: String
+  }
 });
 
 vendorSchema.virtual('orders', {
-    ref: 'Order',
-    localField: '_id',
-    foreignField: 'owner'
+  ref: 'Order',
+  localField: '_id',
+  foreignField: 'owner'
 });
 
+vendorSchema.methods.toJSON = function() {
+  const vendor = this;
+  const vendorObject = vendor.toObject();
 
-vendorSchema.methods.toJSON = function () {
-    const vendor = this;
-    const vendorObject = vendor.toObject();
+  delete vendorObject.password;
+  delete vendorObject.tokens;
 
-    delete vendorObject.password;
-    delete vendorObject.tokens;
+  return vendorObject;
+};
 
-    return vendorObject;
-}
+vendorSchema.methods.addDishes = async function(dish) {
+  const vendor = this;
+  vendor.dishes = vendor.dishes.concat(dish);
+  await vendor.save();
+  return vendor;
+};
 
-vendorSchema.methods.addDishes = async function (dish) {
+vendorSchema.methods.generateAuthToken = async function() {
+  const vendor = this;
+  const token = jwt.sign(
+    { _id: vendor._id.toString() },
+    process.env.JWT_SECRET
+  );
 
-    const vendor = this;
-    vendor.dishes = vendor.dishes.concat(dish);
-    await vendor.save();
-    return vendor;
+  vendor.tokens = vendor.tokens.concat({ token });
 
-}
+  await vendor.save();
 
-vendorSchema.methods.generateAuthToken = async function () {
-    const vendor = this;
-    const token = jwt.sign({ _id: vendor._id.toString() }, process.env.JWT_SECRET);
+  return token;
+};
 
-    vendor.tokens = vendor.tokens.concat({ token });
+vendorSchema.pre('save', async function(next) {
+  const vendor = this;
 
-    await vendor.save();
+  if (vendor.isModified('password'))
+    vendor.password = await bcrypt.hash(vendor.password, 8);
 
-    return token;
-}
-
-
-vendorSchema.pre('save', async function (next) {
-    const vendor = this;
-
-    if (vendor.isModified('password'))
-        vendor.password = await bcrypt.hash(vendor.password, 8);
-
-    next();
+  next();
 });
 
 vendorSchema.statics.findByCredentials = async (email, password) => {
-    const vendor = await Vendor.findOne({ email });
-    if (!vendor)
-        throw new Error('Unable to login');
-    const isMatch = await bcrypt.compare(password, vendor.password)
-    if (!isMatch)
-        throw new Error('Unable to login');
+  const vendor = await Vendor.findOne({ email });
+  if (!vendor) throw new Error('Unable to login');
+  const isMatch = await bcrypt.compare(password, vendor.password);
+  if (!isMatch) throw new Error('Unable to login');
 
-    return vendor;
-}
+  return vendor;
+};
 
 const Vendor = mongoose.model('Vendor', vendorSchema);
 
